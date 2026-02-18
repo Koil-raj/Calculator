@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: simple-flask-app
 spec:
-  replicas: 2
+  replicas: 4
   selector:
     matchLabels:
       app: simple-flask-app
@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: simple-flask-app
-        image: koil123-gfhufkgvf0dmaqam.azurecr.io/simple-flask-app:latest
+        image: koil123-gfhufkgvf0dmaqam.azurecr.io1/simple-flask-app:latest
         ports:
         - containerPort: 5000
 
