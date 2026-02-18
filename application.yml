@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: simple-flask-app
-        image: koil123-gfhufkgvf0dmaqam.azurecr.io/simple-flask-app:latest
+        image: koil123-gfhufkgvf0dmaqam.azurecr.io1/simple-flask-app:latest
         ports:
         - containerPort: 5000
 
