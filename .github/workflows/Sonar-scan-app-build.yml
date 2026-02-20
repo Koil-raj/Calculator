@@ -39,7 +39,13 @@ jobs:
   build-and-push:
     name: Build & Push to ACR
     runs-on: ubuntu-latest
-    needs: sonarqube-scan  # Only proceed if Quality Gate passed
+    needs: sonarqube-scan
+
+    outputs:
+      image_sha_tag: ${{ steps.meta.outputs.image_sha_tag }}
+      image_latest_tag: ${{ steps.meta.outputs.image_latest_tag }}
+      image_digest: ${{ steps.meta.outputs.image_digest }}
+      image_ref: ${{ steps.meta.outputs.image_ref }}
 
     steps:
       - name: Checkout code
@@ -52,14 +58,51 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
+      - name: Define image coordinates
+        id: meta
+        run: |
+          IMAGE_REPO="${{ secrets.ACR_LOGIN_SERVER }}/simple-flask-app"
+          IMAGE_SHA_TAG="$IMAGE_REPO:${{ github.sha }}"
+          IMAGE_LATEST_TAG="$IMAGE_REPO:latest"
+          echo "image_repo=$IMAGE_REPO" >> $GITHUB_OUTPUT
+          echo "image_sha_tag=$IMAGE_SHA_TAG" >> $GITHUB_OUTPUT
+          echo "image_latest_tag=$IMAGE_LATEST_TAG" >> $GITHUB_OUTPUT
+          # Pre-populate an empty digest; we'll set it after push
+          echo "image_digest=" >> $GITHUB_OUTPUT
+
       - name: Build Docker image
         run: |
           docker build \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/simple-flask-app:${{ github.sha }} \
-            -t ${{ secrets.ACR_LOGIN_SERVER }}/simple-flask-app:latest \
+            -t ${{ steps.meta.outputs.image_sha_tag }} \
+            -t ${{ steps.meta.outputs.image_latest_tag }} \
             .
 
-      - name: Push Docker image to ACR
+      - name: Push image (sha tag) and capture digest
+        id: push_sha
         run: |
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/simple-flask-app:${{ github.sha }}
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/simple-flask-app:latest
+          set -e
+          # Capture push output to a file
+          docker push "${{ steps.meta.outputs.image_sha_tag }}" | tee push_sha.out
+          # Extract digest line
+          DIGEST=$(grep -Eo 'digest: sha256:[0-9a-f]+' push_sha.out | awk '{print $2}' | tail -n1)
+          echo "Digest from push: $DIGEST"
+          echo "image_digest=$DIGEST" >> $GITHUB_OUTPUT
+          # Compose canonical image ref with digest
+          echo "image_ref=${{ steps.meta.outputs.image_repo }}@${DIGEST}" >> $GITHUB_OUTPUT
+
+      - name: Push image (latest)
+        run: |
+          docker push "${{ steps.meta.outputs.image_latest_tag }}"
+
+      - name: Publish Job Summary
+        if: always()
+        run: |
+          {
+            echo "## Image Published to ACR"
+            echo ""
+            echo "- **Repository:** `${{ steps.meta.outputs.image_repo }}`"
+            echo "- **Tag (commit):** `${{ steps.meta.outputs.image_sha_tag }}`"
+            echo "- **Tag (latest):** `${{ steps.meta.outputs.image_latest_tag }}`"
+            echo "- **Digest:** `${{ steps.push_sha.outputs.image_digest }}`"
+            echo "- **Canonical Ref:** `${{ steps.meta.outputs.image_repo }}@${{ steps.push_sha.outputs.image_digest }}`"
+          } >> $GITHUB_STEP_SUMMARY
